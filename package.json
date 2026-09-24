@@ -1,0 +1,18 @@
+{
+  "name": "alesecondbrain-galaxy-graph",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cinematic 3D galaxy graph plugin for the AleSecondBrain vault",
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --outfile=main.js --format=cjs --platform=browser --target=es2018 --external:obsidian --external:electron --external:@codemirror/* --external:@lezer/*",
+    "typecheck": "tsc --noEmit",
+    "sanity": "esbuild scripts/sanity.ts --bundle --platform=node --outfile=scripts/sanity.build.cjs && node scripts/sanity.build.cjs"
+  },
+  "devDependencies": {
+    "@types/three": "^0.170.0",
+    "esbuild": "^0.24.0",
+    "obsidian": "^1.7.2",
+    "three": "^0.170.0",
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "alesecondbrain-galaxy-graph",
+  "name": "AleSecondBrain Galaxy Graph",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Cinematic 3D galaxy/constellation view of your Second Brain.",
+  "author": "Alessandro Bottoni Designer",
+  "isDesktopOnly": false
+}
