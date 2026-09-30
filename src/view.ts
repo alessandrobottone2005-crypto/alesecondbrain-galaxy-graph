@@ -6,10 +6,17 @@ import {
   type CameraState,
   type GalaxySettings,
 } from "./galaxy";
+import { TOGGLE_KEYS, type SliderKey, type ToggleKey } from "./motion";
 
 export const VIEW_TYPE_GALAXY = "alesecondbrain-galaxy-graph-view";
 
-type SettingKey = keyof GalaxySettings;
+const TOGGLE_LABELS: Record<ToggleKey, string> = {
+  animations: "Animations",
+  animFocus: "Camera focus",
+  animPulse: "Node pulse",
+  animReveal: "Link reveal",
+  animIntro: "Intro",
+};
 
 interface SettingsHost {
   loadSettings(): Promise<Partial<GalaxySettings>>;
@@ -25,7 +32,8 @@ export class GalaxyGraphView extends ItemView {
   private hintEl: HTMLElement | null = null;
   private openBtn: HTMLElement | null = null;
   private selectedFile: TFile | null = null;
-  private sliders = new Map<SettingKey, HTMLInputElement>();
+  private sliders = new Map<SliderKey, HTMLInputElement>();
+  private toggles = new Map<ToggleKey, HTMLInputElement>();
   private saveTimer: number | null = null;
   private rebuildTimer: number | null = null;
 
@@ -105,7 +113,7 @@ export class GalaxyGraphView extends ItemView {
     const body = panel.createDiv({ cls: "asb-gg-body" });
 
     const makeSlider = (
-      key: SettingKey,
+      key: SliderKey,
       name: string,
       min: string,
       max: string,
@@ -132,6 +140,18 @@ export class GalaxyGraphView extends ItemView {
     makeSlider("nebula", "Nebula", "0", "1.5", "0.05");
     makeSlider("stars", "Stars", "0", "1.5", "0.05");
 
+    // --- Motion: 5 toggle + intensity (nessun altro slider) ---
+    body.createDiv({ cls: "asb-gg-group-title", text: "Motion" });
+    for (const key of TOGGLE_KEYS) {
+      const label = body.createEl("label", { cls: "asb-gg-check" });
+      label.createSpan({ text: TOGGLE_LABELS[key] });
+      const input = label.createEl("input", { type: "checkbox" });
+      input.checked = Boolean(this.settings[key]);
+      this.toggles.set(key, input);
+      input.addEventListener("change", () => this.applyToggle(key, input.checked));
+    }
+    makeSlider("animIntensity", "Motion intensity", "0.5", "1.5", "0.05");
+
     const actions = body.createDiv({ cls: "asb-gg-actions" });
     const mkBtn = (text: string, fn: () => void): void => {
       const b = actions.createEl("button", { text });
@@ -140,19 +160,22 @@ export class GalaxyGraphView extends ItemView {
     mkBtn("Reset", () => {
       this.settings = { ...DEFAULT_SETTINGS };
       for (const [k, input] of this.sliders) input.value = String(this.settings[k]);
+      for (const [k, input] of this.toggles) input.checked = this.settings[k];
       this.scene?.setBloom(this.settings.bloom);
       this.scene?.setSpread(this.settings.spread);
       this.scene?.setLinkOpacity(this.settings.linkOpacity);
       this.scene?.setFog(this.settings.fog);
       this.scene?.setNebula(this.settings.nebula);
       this.scene?.setStars(this.settings.stars);
+      this.scene?.setIntensity(this.settings.animIntensity);
+      for (const k of TOGGLE_KEYS) this.scene?.setToggle(k, this.settings[k]);
       this.scheduleSave();
     });
     mkBtn("Re-layout", () => this.rebuildScene());
     mkBtn("Refresh", () => this.rebuildScene());
   }
 
-  private applySetting(key: SettingKey, value: number): void {
+  private applySetting(key: SliderKey, value: number): void {
     this.settings[key] = value;
     if (!this.scene) return;
     switch (key) {
@@ -174,7 +197,16 @@ export class GalaxyGraphView extends ItemView {
       case "stars":
         this.scene.setStars(value);
         break;
+      case "animIntensity":
+        this.scene.setIntensity(value);
+        break;
     }
+    this.scheduleSave();
+  }
+
+  private applyToggle(key: ToggleKey, value: boolean): void {
+    this.settings[key] = value;
+    this.scene?.setToggle(key, value);
     this.scheduleSave();
   }
 

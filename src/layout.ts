@@ -2,6 +2,7 @@ import type { App, TFile } from "obsidian";
 import {
   DEFAULT_COLOR,
   EXCLUDED_FOLDERS,
+  EXCLUDED_PATH_PREFIXES,
   MACRO_AREA_COLORS,
   PONTI_AREA,
   ROOT_AREA,
@@ -57,7 +58,7 @@ function topFolder(path: string): string {
 }
 
 function isExcluded(path: string): boolean {
-  return EXCLUDED_FOLDERS.has(topFolder(path));
+  return EXCLUDED_FOLDERS.has(topFolder(path)) || EXCLUDED_PATH_PREFIXES.some((p) => path.startsWith(p));
 }
 
 // FNV-1a 32-bit — hash deterministico (jitter, starfield, nebula, tier init).
@@ -116,7 +117,7 @@ export function buildMacroGraph(
   for (const a of areas) if (!crossLinks.has(a)) crossLinks.set(a, 0);
 
   // Tier derivato dai dati reali: cross-links (peso reale), poi note, poi nome.
-  // 08_Ponti è il cuore dei ponti per definizione → sempre Tier A.
+  // 08-ponti è il cuore dei ponti per definizione → sempre Tier A.
   const ranked = [...areas].sort((x, y) => {
     if (x === PONTI_AREA) return -1;
     if (y === PONTI_AREA) return 1;

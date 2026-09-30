@@ -151,6 +151,28 @@
   accent-color: #53c6a7;
 }
 
+/* Motion: titolo di gruppo + toggle compatti. */
+.asb-gg-group-title {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(201, 197, 192, 0.1);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint, #6f6b66);
+}
+
+.asb-gg-body .asb-gg-check {
+  cursor: pointer;
+}
+
+.asb-gg-body input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #53c6a7;
+}
+
 .asb-gg-actions {
   display: flex;
   gap: 6px;
@@ -267,4 +289,49 @@
   .asb-gg-label {
     max-width: 70vw;
   }
+}
+
+/* ---------- Galaxy 2D ---------- */
+.asb-g2d {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 0 !important;
+  overflow: hidden;
+  background: #0b1020;
+  color: var(--text-normal, #c9c5c0);
+}
+
+.asb-g2d-host {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.asb-g2d-canvas {
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+
+.asb-g2d .asb-gg-label {
+  transform: none;
+  transition: opacity 120ms ease;
+  background: rgba(8, 11, 24, 0.85);
+  border-color: rgba(160, 180, 255, 0.16);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+.asb-g2d .asb-gg-controls {
+  background: rgba(10, 14, 30, 0.72);
+  border-color: rgba(160, 180, 255, 0.14);
+}
+
+.asb-g2d .asb-gg-body input[type="range"] {
+  accent-color: #2ef2b5;
+}
+
+.asb-g2d .asb-gg-open {
+  background: rgba(10, 14, 30, 0.88);
+  border-color: rgba(160, 180, 255, 0.24);
 }

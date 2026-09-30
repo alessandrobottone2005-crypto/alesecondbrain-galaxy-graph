@@ -23,36 +23,67 @@ __export(main_exports, {
   default: () => AleSecondBrainGalaxyGraphPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian2 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 
 // src/view.ts
 var import_obsidian = require("obsidian");
 
 // src/palette.ts
 var MACRO_AREA_COLORS = {
-  "00_Contesto": "#EE7269",
-  "00_Home": "#C9C5C0",
-  "00_Inbox": "#C9C5C0",
-  "01_Universita": "#E8B84F",
-  "02_Portfolio_Progetti": "#A978E8",
-  "03_Fumetti_Collezioni": "#E76AAE",
-  "04_Acquisti_Spese": "#B7C95B",
-  "05_Letture_Media": "#4BC3D5",
-  "06_Persone": "#E49355",
-  "07_Risorse": "#5B8DEF",
-  "08_Ponti": "#53C6A7",
-  "09_Magia_Illusionismo": "#7454D8"
+  "00-contesto": "#EE7269",
+  "00-home": "#C9C5C0",
+  "00-inbox": "#C9C5C0",
+  "01-universita": "#E8B84F",
+  "02-portfolio-progetti": "#A978E8",
+  "03-fumetti-collezioni": "#E76AAE",
+  "04-acquisti-spese": "#B7C95B",
+  "05-letture-media": "#4BC3D5",
+  "06-persone": "#E49355",
+  "07-risorse": "#5B8DEF",
+  "08-ponti": "#53C6A7",
+  "09-magia-illusionismo": "#7454D8"
 };
 var DEFAULT_COLOR = "#C9C5C0";
 var BACKGROUND_COLOR = "#0E0E10";
 var EXCLUDED_FOLDERS = /* @__PURE__ */ new Set([
-  "09_Archivio_Grezzi",
-  "_Assets",
-  "90_Templates",
-  "99_Archivio"
+  "09-archivio-grezzi",
+  "_assets",
+  "90-templates",
+  "99-archivio"
 ]);
-var PONTI_AREA = "08_Ponti";
+var EXCLUDED_PATH_PREFIXES = ["00-contesto/riservato/"];
+var CLUSTER_ORDER = [
+  "01-universita",
+  "02-portfolio-progetti",
+  "03-fumetti-collezioni",
+  "04-acquisti-spese",
+  "05-letture-media",
+  "06-persone",
+  "07-risorse",
+  "09-magia-illusionismo",
+  "00-contesto",
+  "00-home",
+  "00-inbox"
+];
+var PONTI_AREA = "08-ponti";
 var ROOT_AREA = "root";
+var NEON_AREA_COLORS = {
+  "00-contesto": "#FF5A5F",
+  "00-home": "#E8E4FF",
+  "00-inbox": "#E8E4FF",
+  "01-universita": "#FFC53D",
+  "02-portfolio-progetti": "#B77BFF",
+  "03-fumetti-collezioni": "#FF5FB8",
+  "04-acquisti-spese": "#C8F03C",
+  "05-letture-media": "#2EE6FF",
+  "06-persone": "#FF9A3D",
+  "07-risorse": "#4D8BFF",
+  "08-ponti": "#2EF2B5",
+  "09-magia-illusionismo": "#8B5CFF",
+  "10-daily": "#F6F1E8",
+  "11-weekly": "#F6F1E8"
+};
+var NEON_DEFAULT = "#E8E4FF";
 
 // src/layout.ts
 function topFolder(path) {
@@ -60,7 +91,7 @@ function topFolder(path) {
   return i === -1 ? "" : path.slice(0, i);
 }
 function isExcluded(path) {
-  return EXCLUDED_FOLDERS.has(topFolder(path));
+  return EXCLUDED_FOLDERS.has(topFolder(path)) || EXCLUDED_PATH_PREFIXES.some((p) => path.startsWith(p));
 }
 function hash32(s) {
   let h = 2166136261;
@@ -22608,6 +22639,76 @@ var OutputPass = class extends Pass {
   }
 };
 
+// src/motion.ts
+var TOGGLE_KEYS = [
+  "animations",
+  "animFocus",
+  "animPulse",
+  "animReveal",
+  "animIntro"
+];
+var MOTION_DEFAULTS = {
+  animations: true,
+  animFocus: true,
+  animPulse: true,
+  animReveal: true,
+  animIntro: true,
+  animIntensity: 1
+};
+var FOCUS_DURATION = 620;
+var FOCUS_DURATION_REDUCED = 100;
+var PULSE_DURATION = 450;
+var PULSE_GAIN = 0.06;
+var REVEAL_DURATION = 350;
+var INTRO_DURATION = 1e3;
+var INTRO_DURATION_COARSE = 450;
+var INTRO_PULLBACK = 1.14;
+function clamp2(x, min, max) {
+  return x < min ? min : x > max ? max : x;
+}
+function easeInOutCubic(t) {
+  const x = clamp2(t, 0, 1);
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+}
+function easeOutCubic(t) {
+  const x = clamp2(t, 0, 1);
+  return 1 - Math.pow(1 - x, 3);
+}
+var MotionState = class {
+  constructor() {
+    this.camActive = false;
+    this.camKind = "focus";
+    this.camStart = 0;
+    this.camDur = 0;
+    // Endpoint come scalari: niente Vector3 temporanei per frame.
+    this.fromX = 0;
+    this.fromY = 0;
+    this.fromZ = 0;
+    this.fromTX = 0;
+    this.fromTY = 0;
+    this.fromTZ = 0;
+    this.toX = 0;
+    this.toY = 0;
+    this.toZ = 0;
+    this.toTX = 0;
+    this.toTY = 0;
+    this.toTZ = 0;
+    this.pulseStart = -1;
+    // one-shot sul selected (-1 = spento)
+    this.revealActive = false;
+    this.revealStart = 0;
+    this.revealDur = 0;
+  }
+  cancelCamera() {
+    this.camActive = false;
+  }
+  reset() {
+    this.camActive = false;
+    this.pulseStart = -1;
+    this.revealActive = false;
+  }
+};
+
 // src/galaxy.ts
 var LINK_COLOR = new Color("#5a6272");
 var DEFAULT_SETTINGS = {
@@ -22616,7 +22717,8 @@ var DEFAULT_SETTINGS = {
   linkOpacity: 0.028,
   fog: 28e-4,
   nebula: 0.8,
-  stars: 1
+  stars: 1,
+  ...MOTION_DEFAULTS
 };
 var GalaxyScene = class {
   constructor(container, graph, opts) {
@@ -22643,21 +22745,22 @@ var GalaxyScene = class {
     this.lastRaycast = 0;
     this.downX = 0;
     this.downY = 0;
+    // --- MOTION: layer di interaction/motion letto dal loop esistente ---
+    this.motion = new MotionState();
+    this.coarse = false;
+    this.selectedMeshIdx = -1;
+    this.linkSelectionRef = null;
+    // Buffer from/to pre-allocati per il link reveal (0 allocazioni/frame).
+    this.linkFrom = new Float32Array(0);
+    this.linkTo = new Float32Array(0);
+    this.curvedFrom = [];
+    this.curvedTo = [];
     this.loop = () => {
-      var _a, _b;
       if (this.disposed) return;
       this.rafId = requestAnimationFrame(this.loop);
       this.controls.update();
       this.positionLabel();
-      if (this.selected && !this.reducedMotion) {
-        const idx = this.nodeMeshes.findIndex((m) => this.nodeByMesh.get(m) === this.selected);
-        if (idx >= 0) {
-          const halo = this.halos[idx];
-          const base = (_b = (_a = halo.userData.currentScale) != null ? _a : halo.userData.baseScale) != null ? _b : 1;
-          const pulse = 1 + 0.05 * Math.sin(performance.now() * 3e-3);
-          halo.scale.setScalar(base * pulse);
-        }
-      }
+      this.tickMotion(performance.now());
       this.composer.render();
     };
     var _a;
@@ -22668,7 +22771,8 @@ var GalaxyScene = class {
     this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const w = container.clientWidth || 800;
     const h = container.clientHeight || 600;
-    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    this.coarse = window.matchMedia("(pointer: coarse)").matches;
+    const coarse = this.coarse;
     const starScale = coarse ? 0.55 : 1;
     this.renderer = new WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, coarse ? 1.5 : 2));
@@ -22699,6 +22803,8 @@ var GalaxyScene = class {
     this.linkGeo = new BufferGeometry();
     this.linkGeo.setAttribute("position", new BufferAttribute(new Float32Array(graph.links.length * 6), 3));
     this.linkGeo.setAttribute("color", new BufferAttribute(new Float32Array(graph.links.length * 6), 3));
+    this.linkFrom = new Float32Array(graph.links.length * 6);
+    this.linkTo = new Float32Array(graph.links.length * 6);
     this.linkMat = new LineBasicMaterial({
       vertexColors: true,
       transparent: true,
@@ -22739,9 +22845,11 @@ var GalaxyScene = class {
       this.controls.update();
     } else {
       this.frameCamera();
+      this.startIntro();
     }
     this.onPointerMove = (e) => this.handlePointerMove(e);
     this.onPointerDown = (e) => {
+      this.motion.cancelCamera();
       this.downX = e.clientX;
       this.downY = e.clientY;
     };
@@ -22754,6 +22862,7 @@ var GalaxyScene = class {
       this.selected = node === this.selected ? null : node;
       (_b = (_a2 = this.opts).onSelectionChange) == null ? void 0 : _b.call(_a2, this.selected ? this.selected.file : null);
       this.applyAppearance();
+      this.onSelectionChanged();
     };
     this.onDblClick = (e) => {
       const node = this.pick(e);
@@ -22765,10 +22874,12 @@ var GalaxyScene = class {
         this.selected = null;
         (_b = (_a2 = this.opts).onSelectionChange) == null ? void 0 : _b.call(_a2, null);
         this.applyAppearance();
+        this.onSelectionChanged();
       }
     };
     this.onControlsStart = () => {
       this.interacted = true;
+      this.motion.cancelCamera();
     };
     const el = this.renderer.domElement;
     el.addEventListener("pointermove", this.onPointerMove);
@@ -23211,7 +23322,29 @@ var GalaxyScene = class {
   }
   applyLinkColors(focus, second) {
     const colors = this.linkGeo.getAttribute("color");
-    const arr = colors.array;
+    const cur = colors.array;
+    const target = this.linkTo;
+    const selectionChanged = this.selected !== this.linkSelectionRef;
+    const canAnimate = selectionChanged && this.settings.animations && this.settings.animReveal && !this.reducedMotion;
+    if (canAnimate) {
+      this.linkFrom.set(cur);
+      if (this.motion.revealActive && this.motion.revealDur > 0) {
+        const p = clamp2(
+          (performance.now() - this.motion.revealStart) / this.motion.revealDur,
+          0,
+          1
+        );
+        const e = easeOutCubic(p);
+        for (let c = 0; c < this.curved.length; c++) {
+          this.curvedFrom[c] += (this.curvedTo[c] - this.curvedFrom[c]) * e;
+        }
+      } else {
+        for (let c = 0; c < this.curved.length; c++) this.curvedFrom[c] = this.curvedTo[c];
+      }
+      this.motion.revealStart = performance.now();
+      this.motion.revealDur = REVEAL_DURATION * this.settings.animIntensity;
+      this.motion.revealActive = true;
+    }
     let f;
     if (focus) {
       this.linkMat.opacity = focus === this.selected ? 0.52 : 0.3;
@@ -23222,39 +23355,48 @@ var GalaxyScene = class {
         else if (neigh.has(l.source) || neigh.has(l.target)) f = 0.45;
         else if (second && (second.has(l.source) || second.has(l.target))) f = 0.12;
         else f = 4e-3;
-        arr[i * 6] = LINK_COLOR.r * f;
-        arr[i * 6 + 1] = LINK_COLOR.g * f;
-        arr[i * 6 + 2] = LINK_COLOR.b * f;
-        arr[i * 6 + 3] = LINK_COLOR.r * f;
-        arr[i * 6 + 4] = LINK_COLOR.g * f;
-        arr[i * 6 + 5] = LINK_COLOR.b * f;
+        target[i * 6] = LINK_COLOR.r * f;
+        target[i * 6 + 1] = LINK_COLOR.g * f;
+        target[i * 6 + 2] = LINK_COLOR.b * f;
+        target[i * 6 + 3] = LINK_COLOR.r * f;
+        target[i * 6 + 4] = LINK_COLOR.g * f;
+        target[i * 6 + 5] = LINK_COLOR.b * f;
       }
     } else {
       this.linkMat.opacity = this.settings.linkOpacity;
       for (let i = 0; i < this.graph.links.length; i++) {
         f = this.restFactor[i];
-        arr[i * 6] = LINK_COLOR.r * f;
-        arr[i * 6 + 1] = LINK_COLOR.g * f;
-        arr[i * 6 + 2] = LINK_COLOR.b * f;
-        arr[i * 6 + 3] = LINK_COLOR.r * f;
-        arr[i * 6 + 4] = LINK_COLOR.g * f;
-        arr[i * 6 + 5] = LINK_COLOR.b * f;
+        target[i * 6] = LINK_COLOR.r * f;
+        target[i * 6 + 1] = LINK_COLOR.g * f;
+        target[i * 6 + 2] = LINK_COLOR.b * f;
+        target[i * 6 + 3] = LINK_COLOR.r * f;
+        target[i * 6 + 4] = LINK_COLOR.g * f;
+        target[i * 6 + 5] = LINK_COLOR.b * f;
       }
     }
-    colors.needsUpdate = true;
-    for (const c of this.curved) {
+    for (let c = 0; c < this.curved.length; c++) {
+      const linkIdx = this.curved[c].linkIdx;
       let ff;
       if (focus) {
-        const l = this.graph.links[c.linkIdx];
+        const l = this.graph.links[linkIdx];
         if (l.source === focus.id || l.target === focus.id) ff = 1;
         else if (focus.neighbors.has(l.source) || focus.neighbors.has(l.target)) ff = 0.45;
         else if (second && (second.has(l.source) || second.has(l.target))) ff = 0.12;
         else ff = 4e-3;
       } else {
-        ff = this.restFactor[c.linkIdx];
+        ff = this.restFactor[linkIdx];
       }
-      const m = c.line.material;
-      m.color.copy(LINK_COLOR).multiplyScalar(ff);
+      this.curvedTo[c] = ff;
+    }
+    this.linkSelectionRef = this.selected;
+    if (canAnimate) return;
+    if (selectionChanged) this.motion.revealActive = false;
+    if (this.motion.revealActive) return;
+    cur.set(target);
+    colors.needsUpdate = true;
+    for (let c = 0; c < this.curved.length; c++) {
+      const m = this.curved[c].line.material;
+      m.color.copy(LINK_COLOR).multiplyScalar(this.curvedTo[c]);
       m.opacity = this.linkMat.opacity;
     }
   }
@@ -23348,7 +23490,178 @@ var GalaxyScene = class {
     this.renderer.setSize(w, h);
     this.composer.setSize(w, h);
     this.bloomPass.setSize(w, h);
-    if (!this.interacted) this.frameCamera();
+    if (!this.interacted) {
+      this.frameCamera();
+      this.motion.cancelCamera();
+    }
+  }
+  // ============================================================
+  // MOTION — le 4 animazioni V1 girano QUI, dentro il loop esistente.
+  // Nessun secondo rAF, nessun timer per nodo, nessuna allocazione/frame.
+  // ============================================================
+  tickMotion(now2) {
+    var _a, _b;
+    const s = this.settings;
+    const m = this.motion;
+    if (m.camActive) {
+      const wanted = m.camKind === "focus" ? s.animations && s.animFocus : s.animations && s.animIntro;
+      if (!wanted) {
+        m.camActive = false;
+      } else {
+        const p = m.camDur <= 0 ? 1 : clamp2((now2 - m.camStart) / m.camDur, 0, 1);
+        const e = easeInOutCubic(p);
+        this.camera.position.set(
+          m.fromX + (m.toX - m.fromX) * e,
+          m.fromY + (m.toY - m.fromY) * e,
+          m.fromZ + (m.toZ - m.fromZ) * e
+        );
+        this.controls.target.set(
+          m.fromTX + (m.toTX - m.fromTX) * e,
+          m.fromTY + (m.toTY - m.fromTY) * e,
+          m.fromTZ + (m.toTZ - m.fromTZ) * e
+        );
+        if (p >= 1) m.camActive = false;
+      }
+    }
+    if (m.pulseStart >= 0 && this.selectedMeshIdx >= 0 && s.animations && s.animPulse && !this.reducedMotion) {
+      const p = (now2 - m.pulseStart) / (PULSE_DURATION * s.animIntensity);
+      const halo = this.halos[this.selectedMeshIdx];
+      const base = (_b = (_a = halo.userData.currentScale) != null ? _a : halo.userData.baseScale) != null ? _b : 1;
+      if (p >= 1) {
+        halo.scale.setScalar(base);
+        m.pulseStart = -1;
+      } else {
+        halo.scale.setScalar(base * (1 + PULSE_GAIN * s.animIntensity * Math.sin(Math.PI * p)));
+      }
+    }
+    if (m.revealActive) {
+      const p = m.revealDur <= 0 ? 1 : clamp2((now2 - m.revealStart) / m.revealDur, 0, 1);
+      const e = easeOutCubic(p);
+      const colors = this.linkGeo.getAttribute("color");
+      const arr = colors.array;
+      const from = this.linkFrom;
+      const to = this.linkTo;
+      for (let i = 0; i < arr.length; i++) arr[i] = from[i] + (to[i] - from[i]) * e;
+      colors.needsUpdate = true;
+      for (let c = 0; c < this.curved.length; c++) {
+        const f = this.curvedFrom[c] + (this.curvedTo[c] - this.curvedFrom[c]) * e;
+        const cm = this.curved[c].line.material;
+        cm.color.copy(LINK_COLOR).multiplyScalar(f);
+        cm.opacity = this.linkMat.opacity;
+      }
+      if (p >= 1) m.revealActive = false;
+    }
+  }
+  /** Avvio focus: conserva l'angolo di vista, niente overshoot, niente swing. */
+  startFocus() {
+    const s = this.settings;
+    if (!s.animations || !s.animFocus || !this.selected || this.selectedMeshIdx < 0) return;
+    const mesh = this.nodeMeshes[this.selectedMeshIdx];
+    const m = this.motion;
+    let dx = this.camera.position.x - mesh.position.x;
+    let dy = this.camera.position.y - mesh.position.y;
+    let dz = this.camera.position.z - mesh.position.z;
+    let len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (len < 1e-4) {
+      dx = 0.45;
+      dy = 0.35;
+      dz = 1;
+      len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+    dx /= len;
+    dy /= len;
+    dz /= len;
+    const curDist = this.camera.position.distanceTo(this.controls.target);
+    const minD = Math.max(this.controls.minDistance * 1.2, 40);
+    const dist = clamp2(
+      curDist * 0.35,
+      Math.min(minD, curDist),
+      Math.min(240, curDist)
+    );
+    m.camKind = "focus";
+    m.camStart = performance.now();
+    m.camDur = (this.reducedMotion ? FOCUS_DURATION_REDUCED : FOCUS_DURATION) * s.animIntensity;
+    m.fromX = this.camera.position.x;
+    m.fromY = this.camera.position.y;
+    m.fromZ = this.camera.position.z;
+    m.fromTX = this.controls.target.x;
+    m.fromTY = this.controls.target.y;
+    m.fromTZ = this.controls.target.z;
+    m.toX = mesh.position.x + dx * dist;
+    m.toY = mesh.position.y + dy * dist;
+    m.toZ = mesh.position.z + dz * dist;
+    m.toTX = mesh.position.x;
+    m.toTY = mesh.position.y;
+    m.toTZ = mesh.position.z;
+    m.camActive = true;
+  }
+  /** Cinematic intro: solo dolly (×1.14 → framing naturale), nessuna orbita. */
+  startIntro() {
+    const s = this.settings;
+    if (!s.animations || !s.animIntro || this.reducedMotion || this.interacted) return;
+    const m = this.motion;
+    const px = this.camera.position.x;
+    const py = this.camera.position.y;
+    const pz = this.camera.position.z;
+    const tx = this.controls.target.x;
+    const ty = this.controls.target.y;
+    const tz = this.controls.target.z;
+    m.camKind = "intro";
+    m.camStart = performance.now();
+    m.camDur = (this.coarse ? INTRO_DURATION_COARSE : INTRO_DURATION) * s.animIntensity;
+    m.fromX = tx + (px - tx) * INTRO_PULLBACK;
+    m.fromY = ty + (py - ty) * INTRO_PULLBACK;
+    m.fromZ = tz + (pz - tz) * INTRO_PULLBACK;
+    m.fromTX = tx;
+    m.fromTY = ty;
+    m.fromTZ = tz;
+    m.toX = px;
+    m.toY = py;
+    m.toZ = pz;
+    m.toTX = tx;
+    m.toTY = ty;
+    m.toTZ = tz;
+    m.camActive = true;
+  }
+  /** Cambio selezione: indice del nodo + one-shot pulse + focus. */
+  onSelectionChanged() {
+    if (!this.selected) {
+      this.selectedMeshIdx = -1;
+      this.motion.pulseStart = -1;
+      this.motion.cancelCamera();
+      return;
+    }
+    this.selectedMeshIdx = this.nodeMeshes.findIndex(
+      (mesh) => this.nodeByMesh.get(mesh) === this.selected
+    );
+    if (this.selectedMeshIdx < 0) {
+      this.motion.pulseStart = -1;
+      return;
+    }
+    const s = this.settings;
+    this.motion.pulseStart = s.animations && s.animPulse && !this.reducedMotion ? performance.now() : -1;
+    this.startFocus();
+  }
+  /** Porta immediatamente lo stato statico (toggle spento a metà animazione). */
+  finishReveal() {
+    const colors = this.linkGeo.getAttribute("color");
+    const arr = colors.array;
+    arr.set(this.linkTo);
+    colors.needsUpdate = true;
+    for (let c = 0; c < this.curved.length; c++) {
+      const cm = this.curved[c].line.material;
+      cm.color.copy(LINK_COLOR).multiplyScalar(this.curvedTo[c]);
+      cm.opacity = this.linkMat.opacity;
+    }
+    this.motion.revealActive = false;
+  }
+  restoreSelectedHalo() {
+    var _a, _b;
+    this.motion.pulseStart = -1;
+    if (this.selectedMeshIdx < 0) return;
+    const halo = this.halos[this.selectedMeshIdx];
+    const base = (_b = (_a = halo.userData.currentScale) != null ? _a : halo.userData.baseScale) != null ? _b : 1;
+    halo.scale.setScalar(base);
   }
   // ============================================================
   // SETTINGS (HUD)
@@ -23386,6 +23699,33 @@ var GalaxyScene = class {
     for (const m of this.starMats) {
       m.opacity = ((_a = m.userData.baseOpacity) != null ? _a : 0.5) * mult;
     }
+  }
+  // --- MOTION settings ---
+  setToggle(key, value) {
+    this.settings[key] = value;
+    if (value) return;
+    switch (key) {
+      case "animations":
+        this.motion.reset();
+        this.finishReveal();
+        this.restoreSelectedHalo();
+        break;
+      case "animFocus":
+        if (this.motion.camKind === "focus") this.motion.cancelCamera();
+        break;
+      case "animIntro":
+        if (this.motion.camKind === "intro") this.motion.cancelCamera();
+        break;
+      case "animPulse":
+        this.restoreSelectedHalo();
+        break;
+      case "animReveal":
+        this.finishReveal();
+        break;
+    }
+  }
+  setIntensity(value) {
+    this.settings.animIntensity = clamp2(value, 0.5, 1.5);
   }
   getCameraState() {
     return {
@@ -23576,6 +23916,13 @@ function sampleLattice(lat, n, u, v) {
 
 // src/view.ts
 var VIEW_TYPE_GALAXY = "alesecondbrain-galaxy-graph-view";
+var TOGGLE_LABELS = {
+  animations: "Animations",
+  animFocus: "Camera focus",
+  animPulse: "Node pulse",
+  animReveal: "Link reveal",
+  animIntro: "Intro"
+};
 var GalaxyGraphView = class extends import_obsidian.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
@@ -23589,6 +23936,7 @@ var GalaxyGraphView = class extends import_obsidian.ItemView {
     this.openBtn = null;
     this.selectedFile = null;
     this.sliders = /* @__PURE__ */ new Map();
+    this.toggles = /* @__PURE__ */ new Map();
     this.saveTimer = null;
     this.rebuildTimer = null;
   }
@@ -23670,21 +24018,34 @@ var GalaxyGraphView = class extends import_obsidian.ItemView {
     makeSlider("fog", "Fog", "0", "0.006", "0.0002");
     makeSlider("nebula", "Nebula", "0", "1.5", "0.05");
     makeSlider("stars", "Stars", "0", "1.5", "0.05");
+    body.createDiv({ cls: "asb-gg-group-title", text: "Motion" });
+    for (const key of TOGGLE_KEYS) {
+      const label = body.createEl("label", { cls: "asb-gg-check" });
+      label.createSpan({ text: TOGGLE_LABELS[key] });
+      const input = label.createEl("input", { type: "checkbox" });
+      input.checked = Boolean(this.settings[key]);
+      this.toggles.set(key, input);
+      input.addEventListener("change", () => this.applyToggle(key, input.checked));
+    }
+    makeSlider("animIntensity", "Motion intensity", "0.5", "1.5", "0.05");
     const actions = body.createDiv({ cls: "asb-gg-actions" });
     const mkBtn = (text, fn) => {
       const b = actions.createEl("button", { text });
       b.addEventListener("click", fn);
     };
     mkBtn("Reset", () => {
-      var _a, _b, _c, _d, _e, _f;
+      var _a, _b, _c, _d, _e, _f, _g, _h;
       this.settings = { ...DEFAULT_SETTINGS };
       for (const [k, input] of this.sliders) input.value = String(this.settings[k]);
+      for (const [k, input] of this.toggles) input.checked = this.settings[k];
       (_a = this.scene) == null ? void 0 : _a.setBloom(this.settings.bloom);
       (_b = this.scene) == null ? void 0 : _b.setSpread(this.settings.spread);
       (_c = this.scene) == null ? void 0 : _c.setLinkOpacity(this.settings.linkOpacity);
       (_d = this.scene) == null ? void 0 : _d.setFog(this.settings.fog);
       (_e = this.scene) == null ? void 0 : _e.setNebula(this.settings.nebula);
       (_f = this.scene) == null ? void 0 : _f.setStars(this.settings.stars);
+      (_g = this.scene) == null ? void 0 : _g.setIntensity(this.settings.animIntensity);
+      for (const k of TOGGLE_KEYS) (_h = this.scene) == null ? void 0 : _h.setToggle(k, this.settings[k]);
       this.scheduleSave();
     });
     mkBtn("Re-layout", () => this.rebuildScene());
@@ -23712,7 +24073,16 @@ var GalaxyGraphView = class extends import_obsidian.ItemView {
       case "stars":
         this.scene.setStars(value);
         break;
+      case "animIntensity":
+        this.scene.setIntensity(value);
+        break;
     }
+    this.scheduleSave();
+  }
+  applyToggle(key, value) {
+    var _a;
+    this.settings[key] = value;
+    (_a = this.scene) == null ? void 0 : _a.setToggle(key, value);
     this.scheduleSave();
   }
   scheduleSave() {
@@ -23790,40 +24160,915 @@ function emptyMacro() {
   };
 }
 
+// src/view2d.ts
+var import_obsidian2 = require("obsidian");
+
+// src/layout2d.ts
+var ALPHA_MIN = 4e-3;
+var ALPHA_DECAY = 0.985;
+var VELOCITY_DECAY = 0.58;
+var CHARGE = 520;
+var LINK_DISTANCE = 26;
+var LINK_K_SAME = 0.07;
+var LINK_K_CROSS = 0.018;
+var COHESION_K = 0.014;
+var DISC_K = 0.08;
+var CENTER_K = 6e-3;
+function orderAreas(areas) {
+  const set = new Set(areas);
+  const known = CLUSTER_ORDER.filter((a) => set.has(a));
+  const rest = Array.from(set).filter((a) => !CLUSTER_ORDER.includes(a) && a !== PONTI_AREA).sort();
+  return [...known, ...rest];
+}
+function computeAnchors2D(counts, worldRadius) {
+  const anchors = /* @__PURE__ */ new Map();
+  const ring = orderAreas(counts.keys());
+  const weights = ring.map((a) => {
+    var _a;
+    return Math.sqrt((_a = counts.get(a)) != null ? _a : 1);
+  });
+  const total = weights.reduce((s, w) => s + w, 0) || 1;
+  const ringR = worldRadius * 0.56;
+  let acc = 0;
+  ring.forEach((area, i) => {
+    const mid = acc + weights[i] / 2;
+    acc += weights[i];
+    const angle = -Math.PI / 2 + mid / total * Math.PI * 2;
+    anchors.set(area, { x: Math.cos(angle) * ringR, y: Math.sin(angle) * ringR });
+  });
+  if (counts.has(PONTI_AREA)) anchors.set(PONTI_AREA, { x: 0, y: 0 });
+  return anchors;
+}
+function nodeRadius(degree, maxDegree) {
+  const t = Math.log(1 + degree) / Math.log(1 + Math.max(1, maxDegree));
+  return 2.2 + 7.8 * t;
+}
+function createSim2D(nodesIn, linksIn, previous) {
+  var _a;
+  const sorted = [...nodesIn].sort((p, q) => p.id < q.id ? -1 : p.id > q.id ? 1 : 0);
+  const counts = /* @__PURE__ */ new Map();
+  let maxDegree = 1;
+  for (const n of sorted) {
+    counts.set(n.area, ((_a = counts.get(n.area)) != null ? _a : 0) + 1);
+    if (n.degree > maxDegree) maxDegree = n.degree;
+  }
+  const worldRadius = 60 + 26 * Math.sqrt(sorted.length);
+  const anchors = computeAnchors2D(counts, worldRadius);
+  const index = /* @__PURE__ */ new Map();
+  const nodes = sorted.map((n, i) => {
+    var _a2, _b;
+    index.set(n.id, i);
+    const anchor = (_a2 = anchors.get(n.area)) != null ? _a2 : { x: 0, y: 0 };
+    const spread = 8 + 9 * Math.sqrt((_b = counts.get(n.area)) != null ? _b : 1);
+    const prev = previous == null ? void 0 : previous.get(n.id);
+    const angle = hashUnit(n.id, "a2d") * Math.PI * 2;
+    const dist = spread * Math.sqrt(hashUnit(n.id, "r2d"));
+    return {
+      id: n.id,
+      area: n.area,
+      degree: n.degree,
+      r: nodeRadius(n.degree, maxDegree),
+      x: prev ? prev.x : anchor.x + Math.cos(angle) * dist,
+      y: prev ? prev.y : anchor.y + Math.sin(angle) * dist,
+      vx: 0,
+      vy: 0
+    };
+  });
+  const links = [];
+  for (const l of linksIn) {
+    const a = index.get(l.source);
+    const b = index.get(l.target);
+    if (a === void 0 || b === void 0 || a === b) continue;
+    links.push({ a, b, sameArea: nodes[a].area === nodes[b].area });
+  }
+  links.sort((p, q) => p.a - q.a || p.b - q.b);
+  return { nodes, links, anchors, worldRadius, alpha: previous && previous.size > 0 ? 0.35 : 1 };
+}
+function stepSim2D(sim) {
+  var _a;
+  if (sim.alpha < ALPHA_MIN) return false;
+  const { nodes, links, anchors, worldRadius } = sim;
+  const alpha = sim.alpha;
+  const n = nodes.length;
+  for (let i = 0; i < n; i++) {
+    const p = nodes[i];
+    for (let j = i + 1; j < n; j++) {
+      const q = nodes[j];
+      let dx = q.x - p.x;
+      let dy = q.y - p.y;
+      let d2 = dx * dx + dy * dy;
+      if (d2 < 1e-6) {
+        dx = (j - i) * 0.01;
+        dy = 0.01;
+        d2 = dx * dx + dy * dy;
+      }
+      const minD = p.r + q.r + 3;
+      const f = CHARGE * alpha / Math.max(d2, minD * minD);
+      const d = Math.sqrt(d2);
+      const fx = dx / d * f;
+      const fy = dy / d * f;
+      p.vx -= fx;
+      p.vy -= fy;
+      q.vx += fx;
+      q.vy += fy;
+    }
+  }
+  for (const l of links) {
+    const p = nodes[l.a];
+    const q = nodes[l.b];
+    const dx = q.x - p.x;
+    const dy = q.y - p.y;
+    const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+    const target = LINK_DISTANCE + p.r + q.r;
+    const k = (l.sameArea ? LINK_K_SAME : LINK_K_CROSS) * alpha;
+    const f = (d - target) / d * k;
+    const wp = q.degree / (p.degree + q.degree || 1);
+    const wq = 1 - wp;
+    p.vx += dx * f * wp;
+    p.vy += dy * f * wp;
+    q.vx -= dx * f * wq;
+    q.vy -= dy * f * wq;
+  }
+  for (const p of nodes) {
+    const a = (_a = anchors.get(p.area)) != null ? _a : { x: 0, y: 0 };
+    p.vx += (a.x - p.x) * COHESION_K * alpha;
+    p.vy += (a.y - p.y) * COHESION_K * alpha;
+    p.vx -= p.x * CENTER_K * alpha;
+    p.vy -= p.y * CENTER_K * alpha;
+    const r = Math.sqrt(p.x * p.x + p.y * p.y);
+    if (r > worldRadius) {
+      const f = (r - worldRadius) / r * DISC_K;
+      p.vx -= p.x * f;
+      p.vy -= p.y * f;
+    }
+  }
+  for (const p of nodes) {
+    p.vx *= VELOCITY_DECAY;
+    p.vy *= VELOCITY_DECAY;
+    p.x += p.vx;
+    p.y += p.vy;
+  }
+  sim.alpha *= ALPHA_DECAY;
+  return sim.alpha >= ALPHA_MIN;
+}
+function runSim2D(sim, maxSteps = 600) {
+  for (let i = 0; i < maxSteps && stepSim2D(sim); i++) {
+  }
+}
+function areaHalos(sim) {
+  var _a;
+  const acc = /* @__PURE__ */ new Map();
+  for (const p of sim.nodes) {
+    const a = (_a = acc.get(p.area)) != null ? _a : { x: 0, y: 0, n: 0 };
+    a.x += p.x;
+    a.y += p.y;
+    a.n += 1;
+    acc.set(p.area, a);
+  }
+  const out = [];
+  for (const [area, a] of acc) {
+    const cx = a.x / a.n;
+    const cy = a.y / a.n;
+    let s = 0;
+    for (const p of sim.nodes) if (p.area === area) s += (p.x - cx) ** 2 + (p.y - cy) ** 2;
+    out.push({ area, x: cx, y: cy, r: Math.sqrt(s / a.n) + 24, count: a.n });
+  }
+  return out.sort((p, q) => p.area < q.area ? -1 : 1);
+}
+
+// src/render2d.ts
+var DEFAULT_G2D = {
+  glow: 1,
+  halos: 1,
+  links: 1,
+  stars: 1
+};
+var SPRITE_SIZE = 128;
+var softCache = /* @__PURE__ */ new Map();
+function neonColor(area) {
+  var _a;
+  const base = (_a = NEON_AREA_COLORS[area]) != null ? _a : NEON_DEFAULT;
+  let c = softCache.get(base);
+  if (!c) {
+    const [r, g, b] = hexToRgb(base);
+    const [br, bgc, bb] = [11, 16, 32];
+    const mix = (v, w) => Math.round(v * 0.85 + w * 0.15).toString(16).padStart(2, "0");
+    c = "#" + mix(r, br) + mix(g, bgc) + mix(b, bb);
+    softCache.set(base, c);
+  }
+  return c;
+}
+function mixUnit(i, salt) {
+  let h = i * 2654435761 + salt * 2246822507 >>> 0;
+  h ^= h >>> 16;
+  h = Math.imul(h, 2246822507);
+  h ^= h >>> 13;
+  h = Math.imul(h, 3266489909);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function hexToRgb(hex) {
+  const h = hex.replace("#", "");
+  const v = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
+  return [v >> 16 & 255, v >> 8 & 255, v & 255];
+}
+function rgba(hex, a) {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r},${g},${b},${a})`;
+}
+var Renderer2D = class {
+  constructor(host, mobile) {
+    this.mobile = mobile;
+    this.dpr = 1;
+    this.width = 0;
+    this.height = 0;
+    this.sprites = /* @__PURE__ */ new Map();
+    this.starCanvas = null;
+    this.starKey = "";
+    this.neighbors = [];
+    this.labelRank = /* @__PURE__ */ new Set();
+    this.labels = [];
+    this.canvas = document.createElement("canvas");
+    this.canvas.className = "asb-g2d-canvas";
+    host.appendChild(this.canvas);
+    const ctx = this.canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D non disponibile");
+    this.ctx = ctx;
+    const f = getComputedStyle(document.body).getPropertyValue("--font-interface").trim();
+    this.font = f || "system-ui, -apple-system, sans-serif";
+  }
+  setGraph(sim, labels) {
+    this.labels = labels;
+    this.neighbors = sim.nodes.map(() => /* @__PURE__ */ new Set());
+    for (const l of sim.links) {
+      this.neighbors[l.a].add(l.b);
+      this.neighbors[l.b].add(l.a);
+    }
+    const ranked = sim.nodes.map((n, i) => ({ i, d: n.degree })).sort((p, q) => q.d - p.d || p.i - q.i);
+    const top = Math.max(5, Math.ceil(ranked.length * 0.06));
+    this.labelRank = new Set(ranked.slice(0, top).map((r) => r.i));
+  }
+  neighborsOf(i) {
+    var _a;
+    return (_a = this.neighbors[i]) != null ? _a : /* @__PURE__ */ new Set();
+  }
+  resize() {
+    var _a;
+    const rect = (_a = this.canvas.parentElement) == null ? void 0 : _a.getBoundingClientRect();
+    if (!rect) return;
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.width = Math.max(1, rect.width);
+    this.height = Math.max(1, rect.height);
+    this.canvas.width = Math.round(this.width * this.dpr);
+    this.canvas.height = Math.round(this.height * this.dpr);
+    this.canvas.style.width = this.width + "px";
+    this.canvas.style.height = this.height + "px";
+  }
+  get size() {
+    return { w: this.width, h: this.height };
+  }
+  worldToScreen(cam, x, y) {
+    return { x: (x - cam.x) * cam.k + this.width / 2, y: (y - cam.y) * cam.k + this.height / 2 };
+  }
+  screenToWorld(cam, sx, sy) {
+    return { x: (sx - this.width / 2) / cam.k + cam.x, y: (sy - this.height / 2) / cam.k + cam.y };
+  }
+  hitTest(sim, cam, sx, sy) {
+    const w = this.screenToWorld(cam, sx, sy);
+    let best = null;
+    let bestD = Infinity;
+    const slop = 6 / cam.k;
+    sim.nodes.forEach((n, i) => {
+      const d = Math.hypot(n.x - w.x, n.y - w.y);
+      if (d < n.r + slop && d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    return best;
+  }
+  fitCamera(sim) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of sim.nodes) {
+      minX = Math.min(minX, n.x - n.r);
+      minY = Math.min(minY, n.y - n.r);
+      maxX = Math.max(maxX, n.x + n.r);
+      maxY = Math.max(maxY, n.y + n.r);
+    }
+    if (!isFinite(minX)) return { x: 0, y: 0, k: 1 };
+    const pad = 0.86;
+    const k = Math.min(this.width * pad / (maxX - minX || 1), this.height * pad / (maxY - minY || 1));
+    return { x: (minX + maxX) / 2, y: (minY + maxY) / 2, k: Math.min(Math.max(k, 0.2), 4) };
+  }
+  // Sprite di glow pre-renderizzato per colore: alone morbido + nucleo chiaro.
+  sprite(color) {
+    let c = this.sprites.get(color);
+    if (c) return c;
+    c = document.createElement("canvas");
+    c.width = c.height = SPRITE_SIZE;
+    const g = c.getContext("2d");
+    const m = SPRITE_SIZE / 2;
+    const grad = g.createRadialGradient(m, m, 0, m, m, m);
+    grad.addColorStop(0, rgba(color, 0.8));
+    grad.addColorStop(0.14, rgba(color, 0.35));
+    grad.addColorStop(0.4, rgba(color, 0.08));
+    grad.addColorStop(1, rgba(color, 0));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
+    this.sprites.set(color, c);
+    return c;
+  }
+  // Campo stellare fisso (screen space), rigenerato solo a resize / cambio densità.
+  stars(settings) {
+    var _a;
+    const count = Math.round((this.mobile ? 110 : 220) * settings.stars);
+    const key = `${this.canvas.width}x${this.canvas.height}:${count}`;
+    if (this.starCanvas && this.starKey === key) return this.starCanvas;
+    const c = (_a = this.starCanvas) != null ? _a : document.createElement("canvas");
+    c.width = this.canvas.width;
+    c.height = this.canvas.height;
+    const g = c.getContext("2d");
+    g.clearRect(0, 0, c.width, c.height);
+    for (let i = 0; i < count; i++) {
+      const x = mixUnit(i, 1) * c.width;
+      const y = mixUnit(i, 2) * c.height;
+      const b = mixUnit(i, 3);
+      const r = (0.35 + b * 0.7) * this.dpr;
+      g.fillStyle = `rgba(210,220,255,${0.05 + b * 0.2})`;
+      g.beginPath();
+      g.arc(x, y, r, 0, Math.PI * 2);
+      g.fill();
+    }
+    this.starCanvas = c;
+    this.starKey = key;
+    return c;
+  }
+  draw(sim, cam, state, settings) {
+    var _a, _b;
+    const ctx = this.ctx;
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    const bg = ctx.createRadialGradient(W / 2, H * 0.46, 0, W / 2, H / 2, Math.max(W, H) * 0.72);
+    bg.addColorStop(0, "#131B36");
+    bg.addColorStop(0.45, "#0B1020");
+    bg.addColorStop(1, "#010103");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    if (settings.stars > 0) ctx.drawImage(this.stars(settings), 0, 0);
+    ctx.setTransform(cam.k * this.dpr, 0, 0, cam.k * this.dpr, (this.width / 2 - cam.x * cam.k) * this.dpr, (this.height / 2 - cam.y * cam.k) * this.dpr);
+    const focus = (_a = state.selected) != null ? _a : state.hover;
+    const lit = focus !== null ? /* @__PURE__ */ new Set([focus, ...this.neighborsOf(focus)]) : null;
+    const fade = state.fade;
+    if (settings.halos > 0) {
+      ctx.globalCompositeOperation = "lighter";
+      for (const h of areaHalos(sim)) {
+        const color = neonColor(h.area);
+        const r = h.r * 1.9;
+        const g = ctx.createRadialGradient(h.x, h.y, 0, h.x, h.y, r);
+        const a = 0.07 * settings.halos * fade * (lit ? 0.5 : 1);
+        g.addColorStop(0, rgba(color, a));
+        g.addColorStop(0.5, rgba(color, a * 0.4));
+        g.addColorStop(1, rgba(color, 0));
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(h.x, h.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.lineCap = "round";
+    for (const l of sim.links) {
+      const p = sim.nodes[l.a];
+      const q = sim.nodes[l.b];
+      const on = lit ? l.a === focus || l.b === focus : false;
+      const alpha = Math.min(1, (lit ? on ? 0.55 : 0.02 : 0.06) * settings.links) * fade;
+      if (alpha <= 2e-3) continue;
+      const mx = (p.x + q.x) / 2;
+      const my = (p.y + q.y) / 2;
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      const side = hash32(p.id + q.id) & 1 ? 1 : -1;
+      const bend = 0.14 * side;
+      const cx = mx - dy * bend;
+      const cy = my + dx * bend;
+      const cp = neonColor(p.area);
+      const cq = neonColor(q.area);
+      if (cp === cq) {
+        ctx.strokeStyle = rgba(cp, alpha);
+      } else {
+        const g = ctx.createLinearGradient(p.x, p.y, q.x, q.y);
+        g.addColorStop(0, rgba(cp, alpha));
+        g.addColorStop(1, rgba(cq, alpha));
+        ctx.strokeStyle = g;
+      }
+      ctx.lineWidth = (on ? 1.2 : 0.6) / Math.sqrt(cam.k);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.quadraticCurveTo(cx, cy, q.x, q.y);
+      ctx.stroke();
+    }
+    const glow = settings.glow * (this.mobile ? 0.7 : 1);
+    sim.nodes.forEach((n, i) => {
+      const color = neonColor(n.area);
+      const dim = lit && !lit.has(i) ? 0.14 : 1;
+      const boost = i === focus ? 1.5 : 1;
+      if (glow > 0) {
+        const s = n.r * (3.5 + 1.5 * glow) * (i === focus ? 1.8 : 1);
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = Math.min(1, (i === focus ? 0.6 : 0.28) * glow) * dim * fade;
+        ctx.drawImage(this.sprite(color), n.x - s / 2, n.y - s / 2, s, s);
+      }
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = dim * fade;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r * 0.62 * boost, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(255,255,255,${i === focus ? 0.7 : 0.25})`;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r * 0.22 * boost, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    const showHubs = cam.k >= state.labelZoom;
+    if (showHubs || lit) {
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.font = `500 11px ${this.font}`;
+      const placed = [];
+      const order = sim.nodes.map((_, i) => i).sort((a, b) => sim.nodes[b].degree - sim.nodes[a].degree || a - b);
+      for (const i of order) {
+        const n = sim.nodes[i];
+        const wanted = lit ? lit.has(i) && i !== focus : this.labelRank.has(i);
+        if (!wanted) continue;
+        const s = this.worldToScreen(cam, n.x, n.y);
+        const label = (_b = this.labels[i]) != null ? _b : n.id;
+        const w = ctx.measureText(label).width;
+        const y = s.y + n.r * cam.k * 0.7 + 4;
+        const box = { x0: s.x - w / 2 - 3, y0: y - 1, x1: s.x + w / 2 + 3, y1: y + 14 };
+        if (placed.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0)) continue;
+        placed.push(box);
+        ctx.fillStyle = `rgba(222,228,250,${0.55 * fade})`;
+        ctx.shadowColor = "rgba(0,0,0,0.9)";
+        ctx.shadowBlur = 4;
+        ctx.fillText(label, s.x, y);
+      }
+      ctx.shadowBlur = 0;
+    }
+  }
+};
+
+// src/view2d.ts
+var VIEW_TYPE_GRAPH_2D = "alesecondbrain-graph-2d-view";
+var AREA_LABELS = {
+  "00-contesto": "Contesto",
+  "00-home": "Home",
+  "00-inbox": "Inbox",
+  "01-universita": "Universit\xE0",
+  "02-portfolio-progetti": "Portfolio e progetti",
+  "03-fumetti-collezioni": "Fumetti e collezioni",
+  "04-acquisti-spese": "Acquisti e spese",
+  "05-letture-media": "Letture e media",
+  "06-persone": "Persone",
+  "07-risorse": "Risorse",
+  "08-ponti": "Ponti",
+  "09-magia-illusionismo": "Magia e illusionismo",
+  "10-daily": "Daily",
+  "11-weekly": "Weekly"
+};
+var Graph2DView = class extends import_obsidian2.ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.plugin = plugin;
+    this.renderer = null;
+    this.sim = null;
+    this.files = [];
+    this.cam = { x: 0, y: 0, k: 1 };
+    this.settings = { ...DEFAULT_G2D };
+    this.hover = null;
+    this.selected = null;
+    this.fade = 1;
+    this.introStart = 0;
+    this.frame = null;
+    this.dirty = true;
+    this.autoFit = true;
+    this.fitK = 1;
+    this.reducedMotion = false;
+    this.labelEl = null;
+    this.openBtn = null;
+    this.host = null;
+    this.pointers = /* @__PURE__ */ new Map();
+    this.dragMoved = 0;
+    this.pinchDist = 0;
+    this.rebuildTimer = null;
+    this.saveTimer = null;
+    this.resizeObs = null;
+  }
+  getViewType() {
+    return VIEW_TYPE_GRAPH_2D;
+  }
+  getDisplayText() {
+    return "AleSecondBrain Graph";
+  }
+  getIcon() {
+    return "network";
+  }
+  async onOpen() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("asb-g2d");
+    this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    this.settings = { ...DEFAULT_G2D, ...await this.plugin.loadG2DSettings() };
+    this.host = container.createDiv({ cls: "asb-g2d-host" });
+    this.labelEl = container.createDiv({ cls: "asb-gg-label" });
+    this.openBtn = container.createEl("button", { cls: "asb-gg-open is-hidden", text: "Apri nota" });
+    this.openBtn.addEventListener("click", () => this.openSelected());
+    this.buildHud(container);
+    this.renderer = new Renderer2D(this.host, import_obsidian2.Platform.isMobile);
+    this.renderer.resize();
+    this.bindPointer(this.renderer.canvas);
+    this.resizeObs = new ResizeObserver(() => {
+      var _a;
+      (_a = this.renderer) == null ? void 0 : _a.resize();
+      if (this.autoFit && this.sim && this.renderer) {
+        this.cam = this.renderer.fitCamera(this.sim);
+        this.fitK = this.cam.k;
+      }
+      this.requestDraw();
+    });
+    this.resizeObs.observe(this.host);
+    this.rebuild(false);
+    const scheduleIfMd = (path) => {
+      if (path.endsWith(".md")) this.scheduleRebuild();
+    };
+    this.registerEvent(this.app.vault.on("create", (f) => scheduleIfMd(f.path)));
+    this.registerEvent(this.app.vault.on("delete", (f) => scheduleIfMd(f.path)));
+    this.registerEvent(this.app.vault.on("rename", (f) => scheduleIfMd(f.path)));
+    this.registerEvent(this.app.metadataCache.on("resolved", () => this.scheduleRebuild()));
+  }
+  async onClose() {
+    var _a;
+    if (this.frame !== null) cancelAnimationFrame(this.frame);
+    if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
+    if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+    (_a = this.resizeObs) == null ? void 0 : _a.disconnect();
+    this.renderer = null;
+    this.sim = null;
+  }
+  // ============================================================
+  // Grafo: solo note reali e wikilink risolti (buildGraph).
+  // ============================================================
+  rebuild(keepPositions) {
+    var _a, _b;
+    if (!this.renderer) return;
+    const graph = buildGraph(this.app);
+    const previous = /* @__PURE__ */ new Map();
+    if (keepPositions && this.sim) for (const n of this.sim.nodes) previous.set(n.id, { x: n.x, y: n.y });
+    const selectedId = this.selected !== null ? (_b = (_a = this.sim) == null ? void 0 : _a.nodes[this.selected]) == null ? void 0 : _b.id : void 0;
+    this.sim = createSim2D(
+      graph.nodes.map((n) => ({ id: n.id, area: n.area, degree: n.degree })),
+      graph.links,
+      keepPositions ? previous : void 0
+    );
+    const byId = graph.nodeById;
+    this.files = this.sim.nodes.map((n) => byId.get(n.id).file);
+    const labels = this.files.map((f) => {
+      var _a2, _b2;
+      const title = (_b2 = (_a2 = this.app.metadataCache.getFileCache(f)) == null ? void 0 : _a2.frontmatter) == null ? void 0 : _b2.title;
+      return typeof title === "string" && title.trim() ? title.trim() : f.basename;
+    });
+    this.renderer.setGraph(this.sim, labels);
+    this.hover = null;
+    this.selected = selectedId ? this.sim.nodes.findIndex((n) => n.id === selectedId) : null;
+    if (this.selected === -1) this.selected = null;
+    this.updateSelectionUi();
+    if (!keepPositions) {
+      if (this.reducedMotion) {
+        runSim2D(this.sim);
+        this.fade = 1;
+      } else {
+        for (let i = 0; i < 160; i++) stepSim2D(this.sim);
+        this.fade = 0;
+        this.introStart = performance.now();
+      }
+      this.autoFit = true;
+      this.cam = this.renderer.fitCamera(this.sim);
+      this.fitK = this.cam.k;
+    }
+    this.requestDraw();
+  }
+  scheduleRebuild() {
+    if (this.rebuildTimer !== null) window.clearTimeout(this.rebuildTimer);
+    this.rebuildTimer = window.setTimeout(() => {
+      this.rebuildTimer = null;
+      this.rebuild(true);
+    }, 900);
+  }
+  // ============================================================
+  // Loop di rendering: gira solo mentre qualcosa si muove.
+  // ============================================================
+  requestDraw() {
+    this.dirty = true;
+    if (this.frame === null) this.frame = requestAnimationFrame(() => this.tick());
+  }
+  tick() {
+    this.frame = null;
+    if (!this.renderer || !this.sim) return;
+    let moving = false;
+    if (this.fade < 1) {
+      this.fade = Math.min(1, (performance.now() - this.introStart) / 900);
+      moving = true;
+    }
+    if (!this.reducedMotion && stepSim2D(this.sim)) {
+      stepSim2D(this.sim);
+      moving = true;
+      if (this.autoFit) {
+        const target = this.renderer.fitCamera(this.sim);
+        this.fitK = target.k;
+        this.easeCamera(target);
+      }
+    }
+    if (moving || this.dirty) {
+      this.dirty = false;
+      this.renderer.draw(
+        this.sim,
+        this.cam,
+        { hover: this.hover, selected: this.selected, fade: easeOut(this.fade), labelZoom: this.fitK * 2 },
+        this.settings
+      );
+      this.positionLabel();
+    }
+    if (moving) this.frame = requestAnimationFrame(() => this.tick());
+  }
+  easeCamera(target) {
+    this.cam = {
+      x: this.cam.x + (target.x - this.cam.x) * 0.08,
+      y: this.cam.y + (target.y - this.cam.y) * 0.08,
+      k: this.cam.k + (target.k - this.cam.k) * 0.08
+    };
+  }
+  // ============================================================
+  // Interazione: pan, zoom (rotella / pinch), hover, selezione.
+  // ============================================================
+  bindPointer(canvas) {
+    const local = (e) => {
+      const r = canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    canvas.addEventListener("pointerdown", (e) => {
+      canvas.setPointerCapture(e.pointerId);
+      this.pointers.set(e.pointerId, local(e));
+      this.dragMoved = 0;
+      if (this.pointers.size === 2) this.pinchDist = this.pointerSpread();
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      const p = local(e);
+      const prev = this.pointers.get(e.pointerId);
+      if (!prev) {
+        if (e.pointerType === "mouse") this.updateHover(p.x, p.y);
+        return;
+      }
+      this.pointers.set(e.pointerId, p);
+      if (this.pointers.size === 2) {
+        const d = this.pointerSpread();
+        if (this.pinchDist > 0) this.zoomAt(this.pointerCenter(), d / this.pinchDist);
+        this.pinchDist = d;
+        this.dragMoved += 10;
+        return;
+      }
+      const dx = p.x - prev.x;
+      const dy = p.y - prev.y;
+      this.dragMoved += Math.abs(dx) + Math.abs(dy);
+      if (this.dragMoved > 4) {
+        this.autoFit = false;
+        this.cam = { ...this.cam, x: this.cam.x - dx / this.cam.k, y: this.cam.y - dy / this.cam.k };
+        this.requestDraw();
+      }
+    });
+    const end = (e) => {
+      const wasTap = this.pointers.size === 1 && this.dragMoved <= 4;
+      this.pointers.delete(e.pointerId);
+      if (this.pointers.size < 2) this.pinchDist = 0;
+      if (wasTap && this.sim && this.renderer) {
+        const p = local(e);
+        const hit = this.renderer.hitTest(this.sim, this.cam, p.x, p.y);
+        this.selected = hit;
+        this.updateSelectionUi();
+        this.requestDraw();
+      }
+    };
+    canvas.addEventListener("pointerup", end);
+    canvas.addEventListener("pointercancel", (e) => this.pointers.delete(e.pointerId));
+    canvas.addEventListener("pointerleave", (e) => {
+      if (e.pointerType === "mouse" && this.hover !== null) {
+        this.hover = null;
+        this.requestDraw();
+      }
+    });
+    canvas.addEventListener("dblclick", (e) => {
+      if (!this.sim || !this.renderer) return;
+      const p = local(e);
+      const hit = this.renderer.hitTest(this.sim, this.cam, p.x, p.y);
+      if (hit !== null) {
+        this.selected = hit;
+        this.openSelected();
+      }
+    });
+    canvas.addEventListener(
+      "wheel",
+      (e) => {
+        e.preventDefault();
+        this.zoomAt(local(e), Math.exp(-e.deltaY * 15e-4));
+      },
+      { passive: false }
+    );
+  }
+  pointerSpread() {
+    const [a, b] = Array.from(this.pointers.values());
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+  }
+  pointerCenter() {
+    const [a, b] = Array.from(this.pointers.values());
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+  zoomAt(screen, factor) {
+    if (!this.renderer) return;
+    this.autoFit = false;
+    const before = this.renderer.screenToWorld(this.cam, screen.x, screen.y);
+    const k = Math.min(8, Math.max(0.15, this.cam.k * factor));
+    this.cam = { ...this.cam, k };
+    const after = this.renderer.screenToWorld(this.cam, screen.x, screen.y);
+    this.cam = { x: this.cam.x + before.x - after.x, y: this.cam.y + before.y - after.y, k };
+    this.requestDraw();
+  }
+  updateHover(sx, sy) {
+    if (!this.sim || !this.renderer) return;
+    const hit = this.renderer.hitTest(this.sim, this.cam, sx, sy);
+    if (hit !== this.hover) {
+      this.hover = hit;
+      this.renderer.canvas.style.cursor = hit !== null ? "pointer" : "grab";
+      this.requestDraw();
+    }
+  }
+  positionLabel() {
+    var _a, _b, _c, _d;
+    if (!this.labelEl || !this.sim || !this.renderer) return;
+    const i = (_a = this.hover) != null ? _a : this.selected;
+    if (i === null) {
+      this.labelEl.removeClass("is-visible");
+      return;
+    }
+    const n = this.sim.nodes[i];
+    const f = this.files[i];
+    const s = this.renderer.worldToScreen(this.cam, n.x, n.y);
+    this.labelEl.empty();
+    const title = (_c = (_b = this.app.metadataCache.getFileCache(f)) == null ? void 0 : _b.frontmatter) == null ? void 0 : _c.title;
+    this.labelEl.createDiv({
+      cls: "asb-gg-label-title",
+      text: typeof title === "string" && title.trim() ? title : f.basename
+    });
+    this.labelEl.createDiv({
+      cls: "asb-gg-label-meta",
+      text: `${(_d = AREA_LABELS[n.area]) != null ? _d : n.area} \xB7 ${n.degree} collegamenti`
+    });
+    this.labelEl.style.transform = `translate(${s.x}px, ${s.y - n.r * this.cam.k - 8}px) translate(-50%, -100%)`;
+    this.labelEl.addClass("is-visible");
+  }
+  updateSelectionUi() {
+    var _a, _b;
+    if (this.selected !== null) (_a = this.openBtn) == null ? void 0 : _a.removeClass("is-hidden");
+    else (_b = this.openBtn) == null ? void 0 : _b.addClass("is-hidden");
+  }
+  openSelected() {
+    if (this.selected === null) return;
+    const f = this.files[this.selected];
+    if (f) void this.app.workspace.getLeaf("tab").openFile(f);
+  }
+  // ============================================================
+  // HUD — stesso stile del Galaxy 3D, chiuso di default.
+  // ============================================================
+  buildHud(container) {
+    const panel = container.createDiv({ cls: "asb-gg-controls is-collapsed" });
+    const toggle = panel.createEl("button", { cls: "asb-gg-toggle" });
+    toggle.createSpan({ text: "Grafo" });
+    const chev = toggle.createSpan({ cls: "asb-gg-chevron", text: "\u25B8" });
+    toggle.addEventListener("click", () => {
+      const open = panel.classList.toggle("is-collapsed") === false;
+      chev.textContent = open ? "\u25BE" : "\u25B8";
+    });
+    const body = panel.createDiv({ cls: "asb-gg-body" });
+    const inputs = /* @__PURE__ */ new Map();
+    const slider = (key, name) => {
+      const label = body.createEl("label");
+      label.createSpan({ text: name });
+      const input = label.createEl("input", { type: "range" });
+      input.min = "0";
+      input.max = "2";
+      input.step = "0.05";
+      input.value = String(this.settings[key]);
+      inputs.set(key, input);
+      input.addEventListener("input", () => {
+        this.settings[key] = parseFloat(input.value);
+        this.requestDraw();
+        this.scheduleSave();
+      });
+    };
+    slider("glow", "Glow");
+    slider("halos", "Aloni");
+    slider("links", "Link");
+    slider("stars", "Stelle");
+    const actions = body.createDiv({ cls: "asb-gg-actions" });
+    const btn = (text, fn) => {
+      actions.createEl("button", { text }).addEventListener("click", fn);
+    };
+    btn("Reset", () => {
+      this.settings = { ...DEFAULT_G2D };
+      for (const [k, input] of inputs) input.value = String(this.settings[k]);
+      this.requestDraw();
+      this.scheduleSave();
+    });
+    btn("Centra", () => {
+      if (!this.sim || !this.renderer) return;
+      this.autoFit = true;
+      this.cam = this.renderer.fitCamera(this.sim);
+      this.fitK = this.cam.k;
+      this.requestDraw();
+    });
+    btn("Re-layout", () => this.rebuild(false));
+  }
+  scheduleSave() {
+    if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => {
+      this.saveTimer = null;
+      void this.plugin.saveG2DSettings(this.settings);
+    }, 400);
+  }
+};
+function easeOut(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
 // src/main.ts
-var AleSecondBrainGalaxyGraphPlugin = class extends import_obsidian2.Plugin {
+var AleSecondBrainGalaxyGraphPlugin = class extends import_obsidian3.Plugin {
   async onload() {
     this.registerView(VIEW_TYPE_GALAXY, (leaf) => new GalaxyGraphView(leaf, this));
-    this.addRibbonIcon("network", "Open AleSecondBrain Galaxy Graph", () => {
-      void this.activateView();
+    this.registerView(VIEW_TYPE_GRAPH_2D, (leaf) => new Graph2DView(leaf, this));
+    this.addRibbonIcon("network", "Open AleSecondBrain Graph", () => {
+      void this.activateView(VIEW_TYPE_GRAPH_2D);
+    });
+    this.addCommand({
+      id: "open-alesecondbrain-graph-2d",
+      name: "Open AleSecondBrain Graph (2D)",
+      callback: () => {
+        void this.activateView(VIEW_TYPE_GRAPH_2D);
+      }
     });
     this.addCommand({
       id: "open-alesecondbrain-galaxy-graph",
-      name: "Open AleSecondBrain Galaxy Graph",
+      name: "Open AleSecondBrain Galaxy Graph (3D)",
       callback: () => {
-        void this.activateView();
+        void this.activateView(VIEW_TYPE_GALAXY);
       }
     });
   }
   onunload() {
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_GALAXY);
+    this.app.workspace.detachLeavesOfType(VIEW_TYPE_GRAPH_2D);
   }
-  async activateView() {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_GALAXY);
+  async activateView(type) {
+    const existing = this.app.workspace.getLeavesOfType(type);
     if (existing.length > 0) {
       this.app.workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = this.app.workspace.getLeaf("tab");
-    await leaf.setViewState({ type: VIEW_TYPE_GALAXY, active: true });
+    await leaf.setViewState({ type, active: true });
     this.app.workspace.revealLeaf(leaf);
   }
-  async loadSettings() {
+  async readData() {
     const data = await this.loadData();
     return data && typeof data === "object" ? data : {};
   }
+  async loadSettings() {
+    const { g2d: _g2d, ...rest } = await this.readData();
+    return rest;
+  }
   async saveSettings(settings) {
-    await this.saveData(settings);
+    const data = await this.readData();
+    await this.saveData({ ...settings, g2d: data.g2d });
+  }
+  async loadG2DSettings() {
+    var _a;
+    return (_a = (await this.readData()).g2d) != null ? _a : {};
+  }
+  async saveG2DSettings(settings) {
+    const data = await this.readData();
+    await this.saveData({ ...data, g2d: settings });
   }
 };
 /*! Bundled license information:

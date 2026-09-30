@@ -7,6 +7,22 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import type { TFile } from "obsidian";
 import { BACKGROUND_COLOR } from "./palette";
 import { applySpread, hash32, hashUnit, macroKey, type GalaxyGraph, type GalaxyNode } from "./layout";
+import {
+  FOCUS_DURATION,
+  FOCUS_DURATION_REDUCED,
+  INTRO_DURATION,
+  INTRO_DURATION_COARSE,
+  INTRO_PULLBACK,
+  MOTION_DEFAULTS,
+  MotionState,
+  PULSE_DURATION,
+  PULSE_GAIN,
+  REVEAL_DURATION,
+  type ToggleKey,
+  clamp,
+  easeInOutCubic,
+  easeOutCubic,
+} from "./motion";
 
 const LINK_COLOR = new THREE.Color("#5a6272");
 
@@ -17,6 +33,12 @@ export interface GalaxySettings {
   fog: number;
   nebula: number;
   stars: number;
+  animIntensity: number;
+  animations: boolean;
+  animFocus: boolean;
+  animPulse: boolean;
+  animReveal: boolean;
+  animIntro: boolean;
 }
 
 export const DEFAULT_SETTINGS: GalaxySettings = {
@@ -26,6 +48,7 @@ export const DEFAULT_SETTINGS: GalaxySettings = {
   fog: 0.0028,
   nebula: 0.8,
   stars: 1,
+  ...MOTION_DEFAULTS,
 };
 
 export interface CameraState {
@@ -114,6 +137,17 @@ export class GalaxyScene {
   private downX = 0;
   private downY = 0;
 
+  // --- MOTION: layer di interaction/motion letto dal loop esistente ---
+  private motion = new MotionState();
+  private coarse = false;
+  private selectedMeshIdx = -1;
+  private linkSelectionRef: GalaxyNode | null = null;
+  // Buffer from/to pre-allocati per il link reveal (0 allocazioni/frame).
+  private linkFrom: Float32Array = new Float32Array(0);
+  private linkTo: Float32Array = new Float32Array(0);
+  private curvedFrom: number[] = [];
+  private curvedTo: number[] = [];
+
   private onPointerMove: (e: PointerEvent) => void;
   private onPointerDown: (e: PointerEvent) => void;
   private onPointerUp: (e: PointerEvent) => void;
@@ -133,7 +167,8 @@ export class GalaxyScene {
 
     // Mobile performance mode (coarse pointer): cap pixel ratio, meno stelle/dust,
     // bloom RT senza MSAA. I knowledge nodes/edges NON vengono mai rimossi.
-    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    this.coarse = window.matchMedia("(pointer: coarse)").matches;
+    const coarse = this.coarse;
     const starScale = coarse ? 0.55 : 1;
 
     // Renderer (view cattura l'errore se WebGL non è disponibile)
@@ -179,6 +214,9 @@ export class GalaxyScene {
     this.linkGeo = new THREE.BufferGeometry();
     this.linkGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(graph.links.length * 6), 3));
     this.linkGeo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(graph.links.length * 6), 3));
+    // Buffer from/to del link reveal: pre-allocati una volta, mai per frame.
+    this.linkFrom = new Float32Array(graph.links.length * 6);
+    this.linkTo = new Float32Array(graph.links.length * 6);
     this.linkMat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
@@ -225,11 +263,15 @@ export class GalaxyScene {
       this.controls.update();
     } else {
       this.frameCamera();
+      // Cinematic intro: solo framing fresh (rispetta la camera salvata).
+      this.startIntro();
     }
 
     // --- Interazioni ---
     this.onPointerMove = (e) => this.handlePointerMove(e);
     this.onPointerDown = (e) => {
+      // Qualsiasi input dell'utente interrompe subito la camera animation.
+      this.motion.cancelCamera();
       this.downX = e.clientX;
       this.downY = e.clientY;
     };
@@ -241,6 +283,7 @@ export class GalaxyScene {
       this.selected = node === this.selected ? null : node;
       this.opts.onSelectionChange?.(this.selected ? this.selected.file : null);
       this.applyAppearance();
+      this.onSelectionChanged();
     };
     this.onDblClick = (e) => {
       const node = this.pick(e);
@@ -251,10 +294,13 @@ export class GalaxyScene {
         this.selected = null;
         this.opts.onSelectionChange?.(null);
         this.applyAppearance();
+        this.onSelectionChanged();
       }
     };
     this.onControlsStart = () => {
+      // Drag / wheel / pan / touch: mai combattere contro OrbitControls.
       this.interacted = true;
+      this.motion.cancelCamera();
     };
 
     const el = this.renderer.domElement;
@@ -735,7 +781,38 @@ export class GalaxyScene {
 
   private applyLinkColors(focus: GalaxyNode | null, second: Set<string> | null): void {
     const colors = this.linkGeo.getAttribute("color") as THREE.BufferAttribute;
-    const arr = colors.array as Float32Array;
+    const cur = colors.array as Float32Array;
+    const target = this.linkTo;
+    const selectionChanged = this.selected !== this.linkSelectionRef;
+    const canAnimate =
+      selectionChanged &&
+      this.settings.animations &&
+      this.settings.animReveal &&
+      !this.reducedMotion;
+
+    // Snapshot dello stato VISUALMENTE attuale prima di calcolare i target:
+    // è il "from" del reveal (niente flicker su selezione/deselezione rapida).
+    if (canAnimate) {
+      this.linkFrom.set(cur);
+      if (this.motion.revealActive && this.motion.revealDur > 0) {
+        // Reveal già in corso: piega lo stato parziale dentro curvedFrom.
+        const p = clamp(
+          (performance.now() - this.motion.revealStart) / this.motion.revealDur,
+          0,
+          1
+        );
+        const e = easeOutCubic(p);
+        for (let c = 0; c < this.curved.length; c++) {
+          this.curvedFrom[c] += (this.curvedTo[c] - this.curvedFrom[c]) * e;
+        }
+      } else {
+        for (let c = 0; c < this.curved.length; c++) this.curvedFrom[c] = this.curvedTo[c];
+      }
+      this.motion.revealStart = performance.now();
+      this.motion.revealDur = REVEAL_DURATION * this.settings.animIntensity;
+      this.motion.revealActive = true;
+    }
+
     let f: number;
     if (focus) {
       // Selected: direct ~0.52 · Hover: direct ~0.30 (moderato).
@@ -747,41 +824,54 @@ export class GalaxyScene {
         else if (neigh.has(l.source) || neigh.has(l.target)) f = 0.45;
         else if (second && (second.has(l.source) || second.has(l.target))) f = 0.12;
         else f = 0.004;
-        arr[i * 6] = LINK_COLOR.r * f;
-        arr[i * 6 + 1] = LINK_COLOR.g * f;
-        arr[i * 6 + 2] = LINK_COLOR.b * f;
-        arr[i * 6 + 3] = LINK_COLOR.r * f;
-        arr[i * 6 + 4] = LINK_COLOR.g * f;
-        arr[i * 6 + 5] = LINK_COLOR.b * f;
+        target[i * 6] = LINK_COLOR.r * f;
+        target[i * 6 + 1] = LINK_COLOR.g * f;
+        target[i * 6 + 2] = LINK_COLOR.b * f;
+        target[i * 6 + 3] = LINK_COLOR.r * f;
+        target[i * 6 + 4] = LINK_COLOR.g * f;
+        target[i * 6 + 5] = LINK_COLOR.b * f;
       }
     } else {
       this.linkMat.opacity = this.settings.linkOpacity;
       for (let i = 0; i < this.graph.links.length; i++) {
         f = this.restFactor[i];
-        arr[i * 6] = LINK_COLOR.r * f;
-        arr[i * 6 + 1] = LINK_COLOR.g * f;
-        arr[i * 6 + 2] = LINK_COLOR.b * f;
-        arr[i * 6 + 3] = LINK_COLOR.r * f;
-        arr[i * 6 + 4] = LINK_COLOR.g * f;
-        arr[i * 6 + 5] = LINK_COLOR.b * f;
+        target[i * 6] = LINK_COLOR.r * f;
+        target[i * 6 + 1] = LINK_COLOR.g * f;
+        target[i * 6 + 2] = LINK_COLOR.b * f;
+        target[i * 6 + 3] = LINK_COLOR.r * f;
+        target[i * 6 + 4] = LINK_COLOR.g * f;
+        target[i * 6 + 5] = LINK_COLOR.b * f;
       }
     }
-    colors.needsUpdate = true;
 
-    // Curve bridges: stesso factor del rispettivo link retto.
-    for (const c of this.curved) {
+    // Curve bridges: stesso factor del rispettivo link retto (target separato).
+    for (let c = 0; c < this.curved.length; c++) {
+      const linkIdx = this.curved[c].linkIdx;
       let ff: number;
       if (focus) {
-        const l = this.graph.links[c.linkIdx];
+        const l = this.graph.links[linkIdx];
         if (l.source === focus.id || l.target === focus.id) ff = 1;
         else if (focus.neighbors.has(l.source) || focus.neighbors.has(l.target)) ff = 0.45;
         else if (second && (second.has(l.source) || second.has(l.target))) ff = 0.12;
         else ff = 0.004;
       } else {
-        ff = this.restFactor[c.linkIdx];
+        ff = this.restFactor[linkIdx];
       }
-      const m = c.line.material as THREE.LineBasicMaterial;
-      m.color.copy(LINK_COLOR).multiplyScalar(ff);
+      this.curvedTo[c] = ff;
+    }
+
+    this.linkSelectionRef = this.selected;
+
+    if (canAnimate) return; // il tick interpola cur → target
+    if (selectionChanged) this.motion.revealActive = false;
+    if (this.motion.revealActive) return; // hover durante un reveal: solo retarget
+
+    // Scrittura istantanea (comportamento pre-motion).
+    cur.set(target);
+    colors.needsUpdate = true;
+    for (let c = 0; c < this.curved.length; c++) {
+      const m = this.curved[c].line.material as THREE.LineBasicMaterial;
+      m.color.copy(LINK_COLOR).multiplyScalar(this.curvedTo[c]);
       m.opacity = this.linkMat.opacity;
     }
   }
@@ -880,7 +970,11 @@ export class GalaxyScene {
     this.composer.setSize(w, h);
     this.bloomPass.setSize(w, h);
     // Re-framing solo se l'utente non ha ancora interagito.
-    if (!this.interacted) this.frameCamera();
+    if (!this.interacted) {
+      this.frameCamera();
+      // La pose è stata ricalcolata: il tween in corso non è più valido.
+      this.motion.cancelCamera();
+    }
   }
 
   private loop = (): void => {
@@ -888,18 +982,203 @@ export class GalaxyScene {
     this.rafId = requestAnimationFrame(this.loop);
     this.controls.update();
     this.positionLabel();
-    // Pulse leggero sul selected (disattivato con prefers-reduced-motion).
-    if (this.selected && !this.reducedMotion) {
-      const idx = this.nodeMeshes.findIndex((m) => this.nodeByMesh.get(m) === this.selected);
-      if (idx >= 0) {
-        const halo = this.halos[idx];
-        const base = (halo.userData.currentScale as number) ?? (halo.userData.baseScale as number) ?? 1;
-        const pulse = 1 + 0.05 * Math.sin(performance.now() * 0.003);
-        halo.scale.setScalar(base * pulse);
-      }
-    }
+    this.tickMotion(performance.now());
     this.composer.render();
   };
+
+  // ============================================================
+  // MOTION — le 4 animazioni V1 girano QUI, dentro il loop esistente.
+  // Nessun secondo rAF, nessun timer per nodo, nessuna allocazione/frame.
+  // ============================================================
+  private tickMotion(now: number): void {
+    const s = this.settings;
+    const m = this.motion;
+
+    // --- 1) Camera tween: cinematic intro + smooth focus (mai entrambi) ---
+    if (m.camActive) {
+      const wanted =
+        m.camKind === "focus" ? s.animations && s.animFocus : s.animations && s.animIntro;
+      if (!wanted) {
+        m.camActive = false;
+      } else {
+        const p = m.camDur <= 0 ? 1 : clamp((now - m.camStart) / m.camDur, 0, 1);
+        const e = easeInOutCubic(p);
+        this.camera.position.set(
+          m.fromX + (m.toX - m.fromX) * e,
+          m.fromY + (m.toY - m.fromY) * e,
+          m.fromZ + (m.toZ - m.fromZ) * e
+        );
+        this.controls.target.set(
+          m.fromTX + (m.toTX - m.fromTX) * e,
+          m.fromTY + (m.toTY - m.fromTY) * e,
+          m.fromTZ + (m.toTZ - m.fromTZ) * e
+        );
+        if (p >= 1) m.camActive = false;
+      }
+    }
+
+    // --- 2) Selected node pulse: one-shot 1.00 → 1.06 → 1.00, solo l'halo ---
+    if (
+      m.pulseStart >= 0 &&
+      this.selectedMeshIdx >= 0 &&
+      s.animations &&
+      s.animPulse &&
+      !this.reducedMotion
+    ) {
+      const p = (now - m.pulseStart) / (PULSE_DURATION * s.animIntensity);
+      const halo = this.halos[this.selectedMeshIdx];
+      const base =
+        (halo.userData.currentScale as number) ?? (halo.userData.baseScale as number) ?? 1;
+      if (p >= 1) {
+        halo.scale.setScalar(base);
+        m.pulseStart = -1;
+      } else {
+        halo.scale.setScalar(base * (1 + PULSE_GAIN * s.animIntensity * Math.sin(Math.PI * p)));
+      }
+    }
+
+    // --- 3) Link reveal: interpolazione del factor già usato dal renderer ---
+    if (m.revealActive) {
+      const p = m.revealDur <= 0 ? 1 : clamp((now - m.revealStart) / m.revealDur, 0, 1);
+      const e = easeOutCubic(p);
+      const colors = this.linkGeo.getAttribute("color") as THREE.BufferAttribute;
+      const arr = colors.array as Float32Array;
+      const from = this.linkFrom;
+      const to = this.linkTo;
+      for (let i = 0; i < arr.length; i++) arr[i] = from[i] + (to[i] - from[i]) * e;
+      colors.needsUpdate = true;
+      for (let c = 0; c < this.curved.length; c++) {
+        const f = this.curvedFrom[c] + (this.curvedTo[c] - this.curvedFrom[c]) * e;
+        const cm = this.curved[c].line.material as THREE.LineBasicMaterial;
+        cm.color.copy(LINK_COLOR).multiplyScalar(f);
+        cm.opacity = this.linkMat.opacity;
+      }
+      if (p >= 1) m.revealActive = false;
+    }
+  }
+
+  /** Avvio focus: conserva l'angolo di vista, niente overshoot, niente swing. */
+  private startFocus(): void {
+    const s = this.settings;
+    if (!s.animations || !s.animFocus || !this.selected || this.selectedMeshIdx < 0) return;
+    const mesh = this.nodeMeshes[this.selectedMeshIdx];
+    const m = this.motion;
+
+    // Direzione camera → nodo (la camera scorre sulla stessa linea di sguardo).
+    let dx = this.camera.position.x - mesh.position.x;
+    let dy = this.camera.position.y - mesh.position.y;
+    let dz = this.camera.position.z - mesh.position.z;
+    let len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (len < 1e-4) {
+      dx = 0.45;
+      dy = 0.35;
+      dz = 1;
+      len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+    dx /= len;
+    dy /= len;
+    dz /= len;
+
+    // Avvicinamento relativo: mai più lontano di prima (niente "zoom out"
+    // quando si è già vicini), sempre dentro i vincoli di OrbitControls.
+    const curDist = this.camera.position.distanceTo(this.controls.target);
+    const minD = Math.max(this.controls.minDistance * 1.2, 40);
+    const dist = clamp(
+      curDist * 0.35,
+      Math.min(minD, curDist),
+      Math.min(240, curDist)
+    );
+
+    m.camKind = "focus";
+    m.camStart = performance.now();
+    m.camDur = (this.reducedMotion ? FOCUS_DURATION_REDUCED : FOCUS_DURATION) * s.animIntensity;
+    m.fromX = this.camera.position.x;
+    m.fromY = this.camera.position.y;
+    m.fromZ = this.camera.position.z;
+    m.fromTX = this.controls.target.x;
+    m.fromTY = this.controls.target.y;
+    m.fromTZ = this.controls.target.z;
+    m.toX = mesh.position.x + dx * dist;
+    m.toY = mesh.position.y + dy * dist;
+    m.toZ = mesh.position.z + dz * dist;
+    m.toTX = mesh.position.x;
+    m.toTY = mesh.position.y;
+    m.toTZ = mesh.position.z;
+    m.camActive = true;
+  }
+
+  /** Cinematic intro: solo dolly (×1.14 → framing naturale), nessuna orbita. */
+  private startIntro(): void {
+    const s = this.settings;
+    if (!s.animations || !s.animIntro || this.reducedMotion || this.interacted) return;
+    const m = this.motion;
+    const px = this.camera.position.x;
+    const py = this.camera.position.y;
+    const pz = this.camera.position.z;
+    const tx = this.controls.target.x;
+    const ty = this.controls.target.y;
+    const tz = this.controls.target.z;
+    m.camKind = "intro";
+    m.camStart = performance.now();
+    m.camDur = (this.coarse ? INTRO_DURATION_COARSE : INTRO_DURATION) * s.animIntensity;
+    m.fromX = tx + (px - tx) * INTRO_PULLBACK;
+    m.fromY = ty + (py - ty) * INTRO_PULLBACK;
+    m.fromZ = tz + (pz - tz) * INTRO_PULLBACK;
+    m.fromTX = tx;
+    m.fromTY = ty;
+    m.fromTZ = tz;
+    m.toX = px;
+    m.toY = py;
+    m.toZ = pz;
+    m.toTX = tx;
+    m.toTY = ty;
+    m.toTZ = tz;
+    m.camActive = true;
+  }
+
+  /** Cambio selezione: indice del nodo + one-shot pulse + focus. */
+  private onSelectionChanged(): void {
+    if (!this.selected) {
+      this.selectedMeshIdx = -1;
+      this.motion.pulseStart = -1;
+      // Deselect → ritorno statico: niente glide residuo.
+      this.motion.cancelCamera();
+      return;
+    }
+    this.selectedMeshIdx = this.nodeMeshes.findIndex(
+      (mesh) => this.nodeByMesh.get(mesh) === this.selected
+    );
+    if (this.selectedMeshIdx < 0) {
+      this.motion.pulseStart = -1;
+      return;
+    }
+    const s = this.settings;
+    this.motion.pulseStart =
+      s.animations && s.animPulse && !this.reducedMotion ? performance.now() : -1;
+    this.startFocus();
+  }
+
+  /** Porta immediatamente lo stato statico (toggle spento a metà animazione). */
+  private finishReveal(): void {
+    const colors = this.linkGeo.getAttribute("color") as THREE.BufferAttribute;
+    const arr = colors.array as Float32Array;
+    arr.set(this.linkTo);
+    colors.needsUpdate = true;
+    for (let c = 0; c < this.curved.length; c++) {
+      const cm = this.curved[c].line.material as THREE.LineBasicMaterial;
+      cm.color.copy(LINK_COLOR).multiplyScalar(this.curvedTo[c]);
+      cm.opacity = this.linkMat.opacity;
+    }
+    this.motion.revealActive = false;
+  }
+
+  private restoreSelectedHalo(): void {
+    this.motion.pulseStart = -1;
+    if (this.selectedMeshIdx < 0) return;
+    const halo = this.halos[this.selectedMeshIdx];
+    const base = (halo.userData.currentScale as number) ?? (halo.userData.baseScale as number) ?? 1;
+    halo.scale.setScalar(base);
+  }
 
   // ============================================================
   // SETTINGS (HUD)
@@ -941,6 +1220,36 @@ export class GalaxyScene {
     for (const m of this.starMats) {
       m.opacity = ((m.userData.baseOpacity as number) ?? 0.5) * mult;
     }
+  }
+
+  // --- MOTION settings ---
+  setToggle(key: ToggleKey, value: boolean): void {
+    this.settings[key] = value;
+    if (value) return;
+    // Spegnere a metà animazione → stato statico immediato (nessun salto dopo).
+    switch (key) {
+      case "animations":
+        this.motion.reset();
+        this.finishReveal();
+        this.restoreSelectedHalo();
+        break;
+      case "animFocus":
+        if (this.motion.camKind === "focus") this.motion.cancelCamera();
+        break;
+      case "animIntro":
+        if (this.motion.camKind === "intro") this.motion.cancelCamera();
+        break;
+      case "animPulse":
+        this.restoreSelectedHalo();
+        break;
+      case "animReveal":
+        this.finishReveal();
+        break;
+    }
+  }
+
+  setIntensity(value: number): void {
+    this.settings.animIntensity = clamp(value, 0.5, 1.5);
   }
 
   getCameraState(): CameraState {

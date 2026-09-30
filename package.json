@@ -1,8 +1,8 @@
 {
   "name": "alesecondbrain-galaxy-graph",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Cinematic 3D galaxy graph plugin for the AleSecondBrain vault",
+  "description": "Neon 2D graph and cinematic 3D galaxy plugin for the AleSecondBrain vault",
   "scripts": {
     "build": "esbuild src/main.ts --bundle --outfile=main.js --format=cjs --platform=browser --target=es2018 --external:obsidian --external:electron --external:@codemirror/* --external:@lezer/*",
     "typecheck": "tsc --noEmit",
